@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from falcon import constants
@@ -95,6 +96,8 @@ def set_default_responders(
     method_map: MethodDict,
     asgi: bool = False,
     default_responder: ResponderCallable | AsgiResponderCallable | None = None,
+    *,
+    allowed_methods: Sequence[str] | None = None,
 ) -> None:
     """Map HTTP methods not explicitly defined on a resource to default responders.
 
@@ -108,31 +111,65 @@ def set_default_responders(
             responder for
             :class:`"405 Method Not Allowed" <falcon.HTTPMethodNotAllowed>`
             is constructed.
+
+    Keyword Args:
+        allowed_methods: Restrict the route to the given uppercase HTTP
+            methods. Falcon's automatic OPTIONS and WebSocket routing are
+            handled separately. Defaults to ``None`` for no restriction.
     """
 
-    # Attach a resource for unsupported HTTP methods
-    allowed_methods = [
+    restriction: set[str] | None = None
+    if allowed_methods is not None:
+        if not isinstance(allowed_methods, Sequence) or isinstance(
+            allowed_methods, (str, bytes, bytearray)
+        ):
+            raise TypeError('allowed_methods must be a sequence of HTTP method names')
+
+        restriction = set()
+        for method in allowed_methods:
+            if not isinstance(method, str):
+                raise TypeError('allowed_methods must contain strings')
+            if (
+                method not in constants.COMBINED_METHODS
+                or method in constants._META_METHODS
+            ):
+                raise ValueError(f'Invalid HTTP method in allowed_methods: {method!r}')
+            restriction.add(method)
+
+        for method in tuple(method_map):
+            if method not in restriction and method not in constants._META_METHODS:
+                del method_map[method]
+
+    supported_methods = [
         m for m in sorted(list(method_map.keys())) if m not in constants._META_METHODS
     ]
 
+    if restriction is not None and default_responder is not None:
+        supported_methods = sorted(set(supported_methods) | (restriction - {'OPTIONS'}))
+
     if 'OPTIONS' not in method_map:
         # OPTIONS itself is intentionally excluded from the Allow header
-        opt_responder = responders.create_default_options(allowed_methods, asgi=asgi)
+        opt_responder = responders.create_default_options(supported_methods, asgi=asgi)
         method_map['OPTIONS'] = opt_responder  # type: ignore[assignment]
-        allowed_methods.append('OPTIONS')
+        supported_methods.append('OPTIONS')
+
+    method_not_allowed = responders.create_method_not_allowed(
+        supported_methods, asgi=asgi
+    )
 
     if 'WEBSOCKET' not in method_map:
         # Explicitly assign 405 Method Not Allowed to avoid
         # using the default responder for WEBSOCKET
-        method_map['WEBSOCKET'] = responders.create_method_not_allowed(
-            allowed_methods, asgi=asgi
-        )  # type: ignore[assignment]
+        method_map['WEBSOCKET'] = method_not_allowed  # type: ignore[assignment]
 
     if default_responder is None:
-        default_responder = responders.create_method_not_allowed(
-            allowed_methods, asgi=asgi
-        )
+        default_responder = method_not_allowed
 
     for method in constants.COMBINED_METHODS:
         if method not in method_map:
-            method_map[method] = default_responder  # type: ignore[assignment]
+            responder = (
+                method_not_allowed
+                if restriction is not None and method not in restriction
+                else default_responder
+            )
+            method_map[method] = responder  # type: ignore[assignment]

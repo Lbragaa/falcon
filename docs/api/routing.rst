@@ -116,6 +116,29 @@ will be rendered by default as a 405 response for a regular HTTP request, and a
 Falcon also provides a default responder for OPTIONS requests that takes into
 account which methods are implemented for the target resource.
 
+.. _routing_allowed_methods:
+
+Restricting HTTP methods
+------------------------
+
+The default router accepts an ``allowed_methods`` keyword when adding a route.
+For example, to expose only the GET responder of a resource that also handles
+POST::
+
+    app.add_route('/documents', documents, allowed_methods=['GET'])
+
+Use a sequence of uppercase HTTP method names. The restriction applies to
+this registration, including any suffixed responders and the optional
+``on_request()`` fallback. A listed method needs a responder or an enabled
+fallback to be handled. List HEAD separately to enable it.
+
+Falcon provides automatic OPTIONS when the route has no enabled
+``on_options()`` responder. WebSocket responders are handled separately.
+An empty sequence disables the application's HTTP responders, while
+``None`` (the default) uses the normal responder mapping.
+
+.. versionadded:: 4.5
+
 Default Behavior
 ----------------
 

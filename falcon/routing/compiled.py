@@ -186,6 +186,8 @@ class CompiledRouter:
                 Another class might use a suffixed responder to handle
                 a shortlink route in addition to the regular route for the
                 resource.
+            allowed_methods: Optional sequence of uppercase HTTP method names
+                to enable for this route. See :ref:`routing_allowed_methods`.
             compile (bool): Optional flag that can be used to compile the
                 routing logic on this call. By default, :class:`.CompiledRouter`
                 delays compilation until the first request is routed. This may
@@ -224,7 +226,10 @@ class CompiledRouter:
         # general case that will be handled by _require_coroutine_responders()
         # and _require_non_coroutine_responders().
         set_default_responders(
-            method_map, asgi=asgi, default_responder=default_responder
+            method_map,
+            asgi=asgi,
+            default_responder=default_responder,
+            allowed_methods=kwargs.get('allowed_methods'),
         )
 
         if asgi:

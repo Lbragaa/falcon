@@ -1,0 +1,2 @@
+The default router now accepts an ``allowed_methods`` option when adding a
+route, allowing applications to restrict which HTTP responders it exposes.

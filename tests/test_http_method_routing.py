@@ -183,6 +183,103 @@ class GetWithFaultyPutResource:
         raise TypeError()
 
 
+def test_allowed_methods_are_per_route(asgi, util):
+    class DocumentResource:
+        def on_get_item(self, req, resp):
+            resp.text = 'document'
+
+        def on_post_item(self, req, resp):
+            resp.status = falcon.HTTP_201
+
+        def on_options_item(self, req, resp):
+            resp.status = falcon.HTTP_204
+
+    class Resource(DocumentResource):
+        pass
+
+    app = util.create_app(asgi)
+    resource = Resource()
+    app.add_route('/readonly', resource, suffix='item', allowed_methods=['GET'])
+    app.add_route('/writable', resource, suffix='item')
+    app.add_route('/options', resource, suffix='item', allowed_methods=['OPTIONS'])
+    client = testing.TestClient(app)
+
+    assert client.simulate_get('/readonly').text == 'document'
+    denied = client.simulate_post('/readonly')
+    assert denied.status_code == 405
+    assert denied.headers['allow'] == 'GET, OPTIONS'
+    assert client.simulate_head('/readonly').status_code == 405
+    options = client.simulate_options('/readonly')
+    assert options.status_code == 200
+    assert options.headers['allow'] == 'GET'
+    assert client.simulate_post('/writable').status_code == 201
+    assert client.simulate_options('/options').status_code == 204
+
+
+@pytest.mark.parametrize('enable_fallback', [False, True])
+def test_allowed_methods_with_fallback(asgi, util, enable_fallback):
+    class Resource:
+        def on_get(self, req, resp):
+            resp.text = 'GET responder'
+
+        def on_request(self, req, resp):
+            resp.text = 'fallback'
+
+    app = util.create_app(asgi)
+    app.router_options.default_to_on_request = enable_fallback
+    app.add_route('/limited', Resource(), allowed_methods=('GET', 'PUT', 'OPTIONS'))
+    app.add_route('/empty', Resource(), allowed_methods=[])
+    client = testing.TestClient(app)
+
+    assert client.simulate_get('/limited').text == 'GET responder'
+    put = client.simulate_put('/limited')
+    if enable_fallback:
+        assert put.text == 'fallback'
+    else:
+        assert put.status_code == 405
+
+    denied = client.simulate_post('/limited')
+    assert denied.status_code == 405
+    assert denied.headers['allow'] == (
+        'GET, PUT, OPTIONS' if enable_fallback else 'GET, OPTIONS'
+    )
+    assert client.simulate_options('/limited').headers['allow'] == (
+        'GET, PUT' if enable_fallback else 'GET'
+    )
+    denied = client.simulate_get('/empty')
+    assert denied.status_code == 405
+    assert denied.headers['allow'] == 'OPTIONS'
+
+
+@pytest.mark.parametrize(
+    'methods, error',
+    [
+        ('GET', TypeError),
+        (42, TypeError),
+        ([1], TypeError),
+        (['get'], ValueError),
+        (['WEBSOCKET'], ValueError),
+    ],
+)
+def test_invalid_allowed_methods(asgi, util, methods, error):
+    app = util.create_app(asgi)
+    with pytest.raises(error, match='allowed_methods'):
+        app.add_route('/test', MiscResource(), allowed_methods=methods)
+
+
+async def test_allowed_methods_preserve_websocket():
+    class Resource:
+        async def on_websocket(self, req, ws):
+            await ws.accept()
+            await ws.send_text('connected')
+
+    app = falcon.asgi.App()
+    app.add_route('/ws', Resource(), allowed_methods=[])
+    async with testing.ASGIConductor(app) as conductor:
+        async with conductor.simulate_ws('/ws') as ws:
+            assert await ws.receive_text() == 'connected'
+
+
 class FaultyDecoratedResource:
     @selfless_decorator
     def on_get(self, req, resp):

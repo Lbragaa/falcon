@@ -712,6 +712,10 @@ class App(Generic[_ReqT, _RespT]):
                     app.add_route('/foo', baz, suffix='foo')
                     app.add_route('/bar', baz, suffix='bar')
 
+            allowed_methods: Optional sequence of uppercase HTTP method names
+                for this route, supported by the default router. See
+                :ref:`routing_allowed_methods`.
+
             compile (bool): Optional flag that can be provided when using the default
                 :class:`.CompiledRouter` to compile the routing logic on this call,
                 since it will otherwise delay compilation until the first request
