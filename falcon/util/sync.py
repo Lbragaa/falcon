@@ -236,10 +236,9 @@ def async_to_sync(
 ) -> Result:
     """Invoke a coroutine function from a synchronous caller.
 
-    This method can be used to invoke an asynchronous task from a synchronous
-    context. The coroutine will be scheduled to run on the current event
-    loop for the current OS thread. If an event loop is not already running,
-    one will be created.
+    Use this helper from synchronous code outside a running event loop.
+    From asynchronous code, call the coroutine function directly with
+    ``await``.
 
     Warning:
         Executing async code in this manner is inefficient since it involves
@@ -256,7 +255,20 @@ def async_to_sync(
 
     Keyword Args:
         **kwargs: Additional args are passed through to the coroutine function.
+
+    Raises:
+        RuntimeError: An event loop is already running in the current thread.
     """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError(
+            'falcon.async_to_sync() cannot be called from a running event loop. '
+            'Call the coroutine function directly with await instead.'
+        )
+
     return _active_runner().run(coroutine(*args, **kwargs))
 
 
@@ -264,15 +276,13 @@ def runs_sync(coroutine: Callable[..., Awaitable[Result]]) -> Callable[..., Resu
     """Transform a coroutine function into a synchronous method.
 
     This is achieved by always invoking the decorated coroutine function via
-    :meth:`async_to_sync`.
+    :meth:`async_to_sync`. Call the resulting function from synchronous code
+    outside a running event loop.
 
     Warning:
         This decorator is very inefficient and should only be used for adapting
         asynchronous test functions for use with synchronous test runners such
         as ``pytest`` or the ``unittest`` module.
-
-        It will create an event loop for the current thread if one is not
-        already running.
 
     Args:
         coroutine: A coroutine function to masquerade as a synchronous one.

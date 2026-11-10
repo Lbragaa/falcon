@@ -8,6 +8,25 @@ from falcon.asgi import App
 import falcon.util
 
 
+def test_async_to_sync():
+    async def add(number, *, increment):
+        return number + increment
+
+    assert falcon.async_to_sync(add, 40, increment=2) == 42
+
+
+@pytest.mark.parametrize('use_decorator', [False, True])
+async def test_async_to_sync_running_loop(use_decorator):
+    def create_coroutine():
+        pytest.fail('The coroutine factory should not be called')
+
+    with pytest.raises(RuntimeError, match='running event loop.*await'):
+        if use_decorator:
+            falcon.runs_sync(create_coroutine)()
+        else:
+            falcon.async_to_sync(create_coroutine)
+
+
 @pytest.mark.slow
 def test_sync_helpers():
     safely_values = []

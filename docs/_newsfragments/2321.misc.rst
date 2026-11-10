@@ -1,0 +1,2 @@
+:func:`falcon.async_to_sync` now raises a clearer error when called from a
+running event loop and rejects the call before creating the coroutine.
